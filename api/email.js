@@ -1,6 +1,6 @@
 // Utilitaire serveur. Ne pas appeler directement depuis le navigateur.
 export async function sendReservationEmail({email,name,player,numbers}){
- const key=process.env.RESEND_API_KEY,from=process.env.EMAIL_FROM,payment=process.env.INTERAC_EMAIL;
+ const key=process.env.RESEND_API_KEY,from=process.env.EMAIL_FROM,payment=process.env.INTERAC_EMAIL||'dunstonca@yahoo.fr';
  if(!key||!from||!payment)return {sent:false,reason:'not_configured'};
  const total=numbers.length*20;
  const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;':'&quot;',"'":'&#39;'}[c]));
