@@ -1,22 +1,27 @@
-import {sendReservationEmail} from './email.js';
-const url=process.env.SUPABASE_URL, key=process.env.SUPABASE_SERVICE_ROLE_KEY;
+import {db} from '../lib/db.js';
+import {processEmails} from '../lib/outbox.js';
+import {validEmail,validId,paymentsReady} from '../lib/validation.js';
 const roster=['Paul Bédard','Lorenzo Cannistraro','Noah Caspar','Hector Cusson','Alexis Gaudreau','Nathan Greffard','Keyshawn Henry','Félix Huard-Roy','Olivier Jolicoeur','Henri Moncion Gaudet','Nathan Robert','Équipe entière'];
 export default async function handler(req,res){
   res.setHeader('Cache-Control','no-store');
-  if(!url||!key)return res.status(503).json({error:'Base de données non configurée'});
   if(!['GET','POST'].includes(req.method))return res.status(405).json({error:'Méthode non autorisée'});
-  const headers={apikey:key,Authorization:'Bearer '+key,'Content-Type':'application/json'};
+  if(!process.env.SUPABASE_URL||!process.env.SUPABASE_SERVICE_ROLE_KEY)return res.status(503).json({error:'Base de données non configurée'});
   try{
-    if(req.method==='GET'){
-      const r=await fetch(url+'/rest/v1/reservations?select=number,player&order=number.asc',{headers,cache:'no-store'});
-      if(!r.ok)throw Error('Supabase GET '+r.status);
-      return res.status(200).json(await r.json());
-    }
-    const b=req.body||{},numbers=b.numbers,player=b.player,name=b.name,email=b.email;
-    if(!Array.isArray(numbers)||numbers.length<1||numbers.length>20||new Set(numbers).size!==numbers.length||numbers.some(n=>!Number.isInteger(n)||n<1||n>200)||!roster.includes(player)||typeof name!=='string'||name.trim().length<2||name.length>120||typeof email!=='string'||email.length>254||!/^\S+@\S+\.\S+$/.test(email))return res.status(400).json({error:'Informations invalides'});
-    const r=await fetch(url+'/rest/v1/rpc/reserve_numbers',{method:'POST',headers,body:JSON.stringify({p_numbers:numbers,p_player:player,p_buyer_name:name.trim(),p_buyer_email:email.trim()})});
-    if(!r.ok){const details=await r.text();if(r.status===409||details.includes('23505'))return res.status(409).json({error:'Un numéro vient d’être réservé. Actualisez la grille.'});throw Error('Supabase POST '+r.status)}
-    const emailResult=await sendReservationEmail({email,name:name.trim(),player,numbers});
-    return res.status(201).json({ok:true,emailSent:emailResult.sent});
-  }catch(e){console.error(e);return res.status(500).json({error:'Erreur du serveur'})}
+    if(req.method==='GET')return res.status(200).json(await db('reservations?select=number,player&order=number.asc'));
+    if(!paymentsReady())return res.status(503).json({error:'Les réservations ouvriront après validation des informations de paiement et des conditions du tirage.'});
+    const {numbers,player,requestId}=req.body||{};
+    const name=typeof req.body?.name==='string'?req.body.name.trim():'';
+    const email=typeof req.body?.email==='string'?req.body.email.trim():'';
+    if(!validId(requestId)||!Array.isArray(numbers)||numbers.length<1||numbers.length>20||new Set(numbers).size!==numbers.length||numbers.some(n=>!Number.isInteger(n)||n<1||n>200)||!roster.includes(player)||name.length<2||name.length>120||!validEmail(email))return res.status(400).json({error:'Informations invalides'});
+    await db('rpc/reserve_with_emails',{method:'POST',body:{p_id:requestId,p_numbers:[...numbers].sort((a,b)=>a-b),p_player:player,p_name:name,p_email:email}});
+    // Once committed, email failures must never turn this into a failed reservation.
+    let emailStatus='pending';
+    try { emailStatus=await processEmails(requestId); }
+    catch { console.error('reservation_email_status_unavailable'); }
+    return res.status(201).json({ok:true,reservationId:requestId,emailSent:emailStatus==='accepted',emailStatus});
+  }catch(e){
+    if(e.conflict)return res.status(409).json({error:'Un numéro est déjà réservé ou cette demande a changé. Actualisez la grille.'});
+    console.error('reservation_database_error');
+    return res.status(500).json({error:'Réponse de réservation indisponible. Réessayez la même demande pour vérifier son état.'});
+  }
 }

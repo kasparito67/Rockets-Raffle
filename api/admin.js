@@ -1,7 +1,11 @@
+import {db} from '../lib/db.js';
+import {processEmails} from '../lib/outbox.js';
+import {validId} from '../lib/validation.js';
 const base=process.env.SUPABASE_URL,service=process.env.SUPABASE_SERVICE_ROLE_KEY,anon=process.env.SUPABASE_ANON_KEY;
 const headers=k=>({apikey:k,Authorization:'Bearer '+k,'Content-Type':'application/json'});
 export default async function handler(req,res){
  res.setHeader('Cache-Control','no-store');
+ try {
  if(!base||!service||!anon)return res.status(503).json({error:'Administration non configurée'});
  if(req.method==='POST'&&req.query.action==='login'){
   const {email,password}=req.body||{};
@@ -20,6 +24,15 @@ export default async function handler(req,res){
  const user=await userR.json();
  const adminR=await fetch(base+'/rest/v1/raffle_admins?select=user_id&user_id=eq.'+encodeURIComponent(user.id),{headers:headers(service)});
  if(!adminR.ok||!(await adminR.json()).length)return res.status(403).json({error:'Accès refusé'});
+ if(req.method==='GET'&&req.query.action==='emails'){
+  try { return res.status(200).json(await db('reservation_emails?select=group_id,audience,status,attempts,last_error,updated_at&order=updated_at.desc')); }
+  catch { return res.status(503).json({error:'Journal indisponible : migration courriels requise'}); }
+ }
+ if(req.method==='POST'&&req.body?.action==='retry_email'){
+  if(!validId(req.body.groupId))return res.status(400).json({error:'Réservation invalide'});
+  try { await processEmails(req.body.groupId); return res.status(200).json({ok:true}); }
+  catch { return res.status(503).json({error:'Reprise indisponible. Vérifiez le journal avant toute nouvelle tentative.'}); }
+ }
  if(req.method==='GET'){
   const r=await fetch(base+'/rest/v1/reservations?select=id,number,player,buyer_name,buyer_email,status,created_at&order=number.asc',{headers:headers(service)});
   if(!r.ok)return res.status(500).json({error:'Lecture impossible'});
@@ -34,4 +47,5 @@ export default async function handler(req,res){
   return res.status(200).json({ok:true});
  }
  return res.status(405).json({error:'Méthode non autorisée'});
+ } catch { console.error('admin_request_failed'); return res.status(503).json({error:'Administration temporairement indisponible'}); }
 }
