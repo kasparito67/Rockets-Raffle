@@ -43,7 +43,7 @@ async function sendGmail({token, to, from, subject, html}) {
 }
 
 export async function sendReservationEmail({email, name, player, numbers}) {
-  const {GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_SENDER_EMAIL, RAFFLE_ADMIN_EMAIL, INTERAC_EMAIL, INTERAC_QUESTION, INTERAC_ANSWER} = process.env;
+  const {GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_SENDER_EMAIL, RAFFLE_ADMIN_EMAIL, RAFFLE_ADMIN_EMAILS, INTERAC_EMAIL, INTERAC_QUESTION, INTERAC_ANSWER} = process.env;
   if (![GMAIL_CLIENT_ID,GMAIL_CLIENT_SECRET,GMAIL_REFRESH_TOKEN,GMAIL_SENDER_EMAIL].every(Boolean)) {
     console.error('Gmail non configuré : variables requises absentes');
     return {sent:false,adminSent:false,reason:'not_configured'};
@@ -71,12 +71,13 @@ export async function sendReservationEmail({email, name, player, numbers}) {
     await sendGmail({token,to:email,from:GMAIL_SENDER_EMAIL,subject:'Rockets du Nord — Confirmation de réservation (' + total + ' $)',html});
     sent = true;
   } catch(e) { console.error('Gmail acheteur:',e.message); }
-  if (RAFFLE_ADMIN_EMAIL && validEmail(RAFFLE_ADMIN_EMAIL)) {
+  const recipients = [...new Set((RAFFLE_ADMIN_EMAILS || RAFFLE_ADMIN_EMAIL || '').split(/[;,]/).map(s => s.trim().toLowerCase()).filter(validEmail))];
+  for (const recipient of recipients) {
     try {
       const adminHtml = '<h2>Nouvelle réservation — Rockets du Nord</h2><p>Nom : ' + escapeHtml(name) + '<br>Courriel : ' + escapeHtml(email) + '<br>Joueur : ' + escapeHtml(player) + '<br>Numéros : ' + escapeHtml(lines) + '<br>Montant attendu : ' + total + ' $</p><p>Paiement en attente de vérification.</p>';
-      await sendGmail({token,to:RAFFLE_ADMIN_EMAIL,from:GMAIL_SENDER_EMAIL,subject:'Nouvelle réservation Rockets (' + total + ' $)',html:adminHtml});
+      await sendGmail({token,to:recipient,from:GMAIL_SENDER_EMAIL,subject:'Nouvelle réservation Rockets (' + total + ' $)',html:adminHtml});
       adminSent = true;
-    } catch(e) { console.error('Gmail organisateur:',e.message); }
+    } catch(e) { console.error('Gmail organisateur:', recipient, e.message); }
   }
   return {sent,adminSent,reason:sent?undefined:'send_error'};
 }
