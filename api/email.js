@@ -43,7 +43,7 @@ async function sendGmail({token, to, from, subject, html}) {
 }
 
 export async function sendReservationEmail({email, name, player, numbers}) {
-  const {GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_SENDER_EMAIL, RAFFLE_ADMIN_EMAIL, RAFFLE_ADMIN_EMAILS, INTERAC_EMAIL, INTERAC_QUESTION, INTERAC_ANSWER} = process.env;
+  const {GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_SENDER_EMAIL, RAFFLE_ADMIN_EMAIL, RAFFLE_ADMIN_EMAILS} = process.env;
   if (![GMAIL_CLIENT_ID,GMAIL_CLIENT_SECRET,GMAIL_REFRESH_TOKEN,GMAIL_SENDER_EMAIL].every(Boolean)) {
     console.error('Gmail non configuré : variables requises absentes');
     return {sent:false,adminSent:false,reason:'not_configured'};
@@ -51,11 +51,10 @@ export async function sendReservationEmail({email, name, player, numbers}) {
   if (!validEmail(email) || !validEmail(GMAIL_SENDER_EMAIL)) return {sent:false,adminSent:false,reason:'invalid_email'};
   const total = numbers.length * 20;
   const lines = numbers.join(', ');
-  const transfer = validEmail(INTERAC_EMAIL || '') ? INTERAC_EMAIL : null;
-  const paymentDetails = transfer
-    ? '<p>Veuillez envoyer votre virement Interac à <strong>' + escapeHtml(transfer) + '</strong>.</p>'
-      + (INTERAC_QUESTION && INTERAC_ANSWER ? '<p>Question de sécurité : <strong>' + escapeHtml(INTERAC_QUESTION) + '</strong><br>Réponse : <strong>' + escapeHtml(INTERAC_ANSWER) + '</strong></p>' : '')
-    : '<p>Les instructions de paiement vous seront communiquées par l’équipe.</p>';
+  const paymentDetails = '<p>Veuillez envoyer votre virement Interac à <strong>Annie, gérante de l’équipe</strong> :</p>'
+    + '<p><strong>(prioriser envoi par téléphone) :</strong> <a href="tel:+15142664950">514-266-4950</a><br>'
+    + '<strong>Courriel :</strong> <a href="mailto:dunstonca@yahoo.fr">dunstonca@yahoo.fr</a></p>'
+    + '<p>Les infos vous seront confirmées par courriel.</p>';
   const html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;color:#171717">'
     + '<div style="background:#111;color:#ffd21a;padding:22px"><h1 style="margin:0">ROCKETS DU NORD</h1><p style="color:white">Confirmation de réservation</p></div>'
     + '<div style="padding:22px"><p>Bonjour ' + escapeHtml(name) + ',</p>'
